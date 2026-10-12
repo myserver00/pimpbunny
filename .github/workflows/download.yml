@@ -1,0 +1,60 @@
+name: Download authorized videos
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "Authorized video URLs, one per line (leave blank to use urls.txt)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Prepare URL list
+        env:
+          INPUT_URLS: ${{ inputs.urls }}
+        run: |
+          if [ -n "$INPUT_URLS" ]; then
+            printf '%s\n' "$INPUT_URLS" > urls.txt
+          fi
+          mkdir -p videos
+
+      - name: Download authorized videos
+        run: python downloader.py --input urls.txt --output videos
+
+      - name: Create ZIP archive
+        if: always()
+        run: |
+          if [ -d videos ] && [ "$(find videos -type f | wc -l)" -gt 0 ]; then
+            cd videos
+            zip -r ../videos.zip .
+          else
+            echo "No video files downloaded."
+          fi
+
+      - name: Upload ZIP artifact
+        if: always() && hashFiles('videos.zip') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: videos-zip
+          path: videos.zip
+          if-no-files-found: warn
+          retention-days: 3
